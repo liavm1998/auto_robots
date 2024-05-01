@@ -72,23 +72,22 @@ LIGHTSPEED = 2.99792458e8
 
 # This should account for rollovers since it uses a week number specific to each measurement
 
-measurements['tRxGnssNanos'] = measurements['TimeNanos'] + measurements['TimeOffsetNanos'] - (measurements['FullBiasNanos'].iloc[0] + measurements['BiasNanos'].iloc[0])
-measurements['GpsWeekNumber'] = np.floor(1e-9 * measurements['tRxGnssNanos'] / WEEKSEC)
-measurements['tRxSeconds'] = 1e-9*measurements['tRxGnssNanos'] - WEEKSEC * measurements['GpsWeekNumber']
-measurements['tTxSeconds'] = 1e-9*(measurements['ReceivedSvTimeNanos'] + measurements['TimeOffsetNanos'])
+measurements['gnss_receive_time_nanoseconds'] = measurements['TimeNanos'] + measurements['TimeOffsetNanos'] - (measurements['FullBiasNanos'].iloc[0] + measurements['BiasNanos'].iloc[0])
+measurements['GpsWeekNumber'] = np.floor(1e-9 * measurements['gnss_receive_time_nanoseconds'] / WEEKSEC)
+measurements['time_since_reference'] = 1e-9*measurements['gnss_receive_time_nanoseconds'] - WEEKSEC * measurements['GpsWeekNumber']
+measurements['transmit_time_seconds'] = 1e-9*(measurements['ReceivedSvTimeNanos'] + measurements['TimeOffsetNanos'])
 # Calculate pseudorange in seconds
-measurements['prSeconds'] = measurements['tRxSeconds'] - measurements['tTxSeconds']
+measurements['pseudorange_seconds'] = measurements['time_since_reference'] - measurements['transmit_time_seconds']
 
 # Conver to meters
-measurements['PrM'] = LIGHTSPEED * measurements['prSeconds']
-measurements['PrSigmaM'] = LIGHTSPEED * 1e-9 * measurements['ReceivedSvTimeUncertaintyNanos']
+measurements['Pseudorange_Measurement'] = LIGHTSPEED * measurements['pseudorange_seconds'] # simple time * speed
 
 manager = EphemerisManager(ephemeris_data_directory)
 
 epoch = 0
 num_sats = 0
 while num_sats < 5 :
-    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['prSeconds'] < 0.1)].drop_duplicates(subset='SvName')
+    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)].drop_duplicates(subset='SvName')
     timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
     one_epoch.set_index('SvName', inplace=True)
     num_sats = len(one_epoch.index)
@@ -97,18 +96,18 @@ while num_sats < 5 :
 sats = one_epoch.index.unique().tolist()
 ephemeris = manager.get_ephemeris(timestamp, sats)
 print(timestamp)
-print(one_epoch[['UnixTime', 'tTxSeconds', 'GpsWeekNumber']])
+print(one_epoch[['UnixTime', 'transmit_time_seconds', 'GpsWeekNumber']])
 
 def calculate_satellite_position(ephemeris, transmit_time):
-    mu = 3.986005e14
-    OmegaDot_e = 7.2921151467e-5
-    F = -4.442807633e-10
+    earth_gravity = 3.986005e14
+    Earth_angular_velocity = 7.2921151467e-5 
+    relativistic_correction_factor  = -4.442807633e-10 # used to relativistic correction to the satellite's clock
     sv_position = pd.DataFrame()
     sv_position['sv']= ephemeris.index
     sv_position.set_index('sv', inplace=True)
     sv_position['t_k'] = transmit_time - ephemeris['t_oe']
     A = ephemeris['sqrtA'].pow(2)
-    n_0 = np.sqrt(mu / A.pow(3))
+    n_0 = np.sqrt(earth_gravity / A.pow(3))
     n = n_0 + ephemeris['deltaN']
     M_k = ephemeris['M_0'] + n * sv_position['t_k']
     E_k = M_k
@@ -122,7 +121,7 @@ def calculate_satellite_position(ephemeris, transmit_time):
         
     sinE_k = np.sin(E_k)
     cosE_k = np.cos(E_k)
-    delT_r = F * ephemeris['e'].pow(ephemeris['sqrtA']) * sinE_k
+    delT_r = relativistic_correction_factor  * ephemeris['e'].pow(ephemeris['sqrtA']) * sinE_k
     delT_oc = transmit_time - ephemeris['t_oc']
     sv_position['delT_sv'] = ephemeris['SVclockBias'] + ephemeris['SVclockDrift'] * delT_oc + ephemeris['SVclockDriftRate'] * delT_oc.pow(2)
 
@@ -146,7 +145,7 @@ def calculate_satellite_position(ephemeris, transmit_time):
     x_k_prime = r_k*np.cos(u_k)
     y_k_prime = r_k*np.sin(u_k)
 
-    Omega_k = ephemeris['Omega_0'] + (ephemeris['OmegaDot'] - OmegaDot_e)*sv_position['t_k'] - OmegaDot_e*ephemeris['t_oe']
+    Omega_k = ephemeris['Omega_0'] + (ephemeris['OmegaDot'] - Earth_angular_velocity)*sv_position['t_k'] - Earth_angular_velocity*ephemeris['t_oe']
 
     sv_position['x_k'] = x_k_prime*np.cos(Omega_k) - y_k_prime*np.cos(i_k)*np.sin(Omega_k)
     sv_position['y_k'] = x_k_prime*np.sin(Omega_k) + y_k_prime*np.cos(i_k)*np.cos(Omega_k)
@@ -154,7 +153,7 @@ def calculate_satellite_position(ephemeris, transmit_time):
     return sv_position
 
 # Run the function and check out the results:
-sv_position = calculate_satellite_position(ephemeris, one_epoch['tTxSeconds'])
+sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
 sv_position.to_csv(os.path.join(parent_directory,'ex0', 'output_xyz.csv'))
 print(sv_position)
 
@@ -192,16 +191,16 @@ x = x0
 b = b0
 ecef_list = []
 for epoch in measurements['Epoch'].unique():
-    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['prSeconds'] < 0.1)] 
+    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
     one_epoch = one_epoch.drop_duplicates(subset='SvName').set_index('SvName')
     if len(one_epoch.index) > 4:
         timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
         sats = one_epoch.index.unique().tolist()
         ephemeris = manager.get_ephemeris(timestamp, sats)
-        sv_position = calculate_satellite_position(ephemeris, one_epoch['tTxSeconds'])
+        sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
 
         xs = sv_position[['x_k', 'y_k', 'z_k']].to_numpy()
-        pr = one_epoch['PrM'] + LIGHTSPEED * sv_position['delT_sv']
+        pr = one_epoch['Pseudorange_Measurement'] + LIGHTSPEED * sv_position['delT_sv']
         pr = pr.to_numpy()
 
         x, b, dp = least_squares(xs, pr, x, b)
