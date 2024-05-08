@@ -34,7 +34,7 @@ measurements = pd.DataFrame(measurements[1:], columns = measurements[0])
 measurements.loc[measurements['Svid'].str.len() == 1, 'Svid'] = '0' + measurements['Svid']
 measurements.loc[measurements['ConstellationType'] == '1', 'Constellation'] = 'G'
 measurements.loc[measurements['ConstellationType'] == '3', 'Constellation'] = 'R'
-measurements['SvName'] = measurements['Constellation'] + measurements['Svid']
+measurements['satPRN'] = measurements['Constellation'] + measurements['Svid']
 
 # Remove all non-GPS measurements
 measurements = measurements.loc[measurements['Constellation'] == 'G']
@@ -87,9 +87,9 @@ manager = EphemerisManager(ephemeris_data_directory)
 epoch = 0
 num_sats = 0
 while num_sats < 5 :
-    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)].drop_duplicates(subset='SvName')
+    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)].drop_duplicates(subset='satPRN')
     timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
-    one_epoch.set_index('SvName', inplace=True)
+    one_epoch.set_index('satPRN', inplace=True)
     num_sats = len(one_epoch.index)
     epoch += 1
 
@@ -103,13 +103,13 @@ def calculate_satellite_position(ephemeris, transmit_time):
     Earth_angular_velocity = 7.2921151467e-5 
     relativistic_correction_factor  = -4.442807633e-10 # used to relativistic correction to the satellite's clock
     sv_position = pd.DataFrame()
-    sv_position['sv']= ephemeris.index
-    sv_position.set_index('sv', inplace=True)
-    sv_position['t_k'] = transmit_time - ephemeris['t_oe']
+    sv_position['satPRN']= ephemeris.index
+    sv_position.set_index('satPRN', inplace=True)
+    sv_position['GPS time'] = transmit_time - ephemeris['t_oe']
     A = ephemeris['sqrtA'].pow(2)
     n_0 = np.sqrt(earth_gravity / A.pow(3))
     n = n_0 + ephemeris['deltaN']
-    M_k = ephemeris['M_0'] + n * sv_position['t_k']
+    M_k = ephemeris['M_0'] + n * sv_position['GPS time']
     E_k = M_k
     err = pd.Series(data=[1]*len(sv_position.index))
     i = 0
@@ -123,7 +123,7 @@ def calculate_satellite_position(ephemeris, transmit_time):
     cosE_k = np.cos(E_k)
     delT_r = relativistic_correction_factor  * ephemeris['e'].pow(ephemeris['sqrtA']) * sinE_k
     delT_oc = transmit_time - ephemeris['t_oc']
-    sv_position['delT_sv'] = ephemeris['SVclockBias'] + ephemeris['SVclockDrift'] * delT_oc + ephemeris['SVclockDriftRate'] * delT_oc.pow(2)
+    sv_position['Sat.bias'] = ephemeris['SVclockBias'] + ephemeris['SVclockDrift'] * delT_oc + ephemeris['SVclockDriftRate'] * delT_oc.pow(2)
 
     v_k = np.arctan2(np.sqrt(1-ephemeris['e'].pow(2))*sinE_k,(cosE_k - ephemeris['e']))
 
@@ -140,16 +140,16 @@ def calculate_satellite_position(ephemeris, transmit_time):
 
     r_k = A*(1 - ephemeris['e']*np.cos(E_k)) + dr_k
 
-    i_k = ephemeris['i_0'] + di_k + ephemeris['IDOT']*sv_position['t_k']
+    i_k = ephemeris['i_0'] + di_k + ephemeris['IDOT']*sv_position['GPS time']
 
     x_k_prime = r_k*np.cos(u_k)
     y_k_prime = r_k*np.sin(u_k)
 
-    Omega_k = ephemeris['Omega_0'] + (ephemeris['OmegaDot'] - Earth_angular_velocity)*sv_position['t_k'] - Earth_angular_velocity*ephemeris['t_oe']
+    Omega_k = ephemeris['Omega_0'] + (ephemeris['OmegaDot'] - Earth_angular_velocity)*sv_position['GPS time'] - Earth_angular_velocity*ephemeris['t_oe']
 
-    sv_position['x_k'] = x_k_prime*np.cos(Omega_k) - y_k_prime*np.cos(i_k)*np.sin(Omega_k)
-    sv_position['y_k'] = x_k_prime*np.sin(Omega_k) + y_k_prime*np.cos(i_k)*np.cos(Omega_k)
-    sv_position['z_k'] = y_k_prime*np.sin(i_k)
+    sv_position['Sat.X'] = x_k_prime*np.cos(Omega_k) - y_k_prime*np.cos(i_k)*np.sin(Omega_k)
+    sv_position['Sat.Y'] = x_k_prime*np.sin(Omega_k) + y_k_prime*np.cos(i_k)*np.cos(Omega_k)
+    sv_position['Sat.Z'] = y_k_prime*np.sin(i_k)
     return sv_position
 
 # Run the function and check out the results:
@@ -186,21 +186,22 @@ def least_squares(xs, measured_pseudorange, x0, b0):
 
 b0 = 0
 x0 = np.array([0, 0, 0])
-xs = sv_position[['x_k', 'y_k', 'z_k']].to_numpy()
+# Sat.X, Sat.Y, Sat.Z
+xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
 x = x0
 b = b0
 ecef_list = []
 for epoch in measurements['Epoch'].unique():
     one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
-    one_epoch = one_epoch.drop_duplicates(subset='SvName').set_index('SvName')
+    one_epoch = one_epoch.drop_duplicates(subset='satPRN').set_index('satPRN')
     if len(one_epoch.index) > 4:
         timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
         sats = one_epoch.index.unique().tolist()
         ephemeris = manager.get_ephemeris(timestamp, sats)
         sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
 
-        xs = sv_position[['x_k', 'y_k', 'z_k']].to_numpy()
-        pr = one_epoch['Pseudorange_Measurement'] + LIGHTSPEED * sv_position['delT_sv']
+        xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
+        pr = one_epoch['Pseudorange_Measurement'] + LIGHTSPEED * sv_position['Sat.bias']
         pr = pr.to_numpy()
 
         x, b, dp = least_squares(xs, pr, x, b)
