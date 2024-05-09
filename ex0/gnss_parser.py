@@ -7,10 +7,15 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import navpy
+
 from gnssutils import EphemerisManager
+import simplekml
+
+
 
 
 # Get path to sample file in data directory, which is located in the parent directory of this notebook
+# input_filepath = sys.argv[1]
 input_filepath = os.path.join(parent_directory,'ex0', 'gnss_log_2024_04_13_19_51_17.txt')
 
 with open(input_filepath) as csvfile:
@@ -95,8 +100,8 @@ while num_sats < 5 :
 
 sats = one_epoch.index.unique().tolist()
 ephemeris = manager.get_ephemeris(timestamp, sats)
-print(timestamp)
-print(one_epoch[['UnixTime', 'transmit_time_seconds', 'GpsWeekNumber']])
+# print(timestamp)
+# print(one_epoch[['UnixTime', 'transmit_time_seconds', 'GpsWeekNumber']])
 
 def calculate_satellite_position(ephemeris, transmit_time):
     earth_gravity = 3.986005e14
@@ -154,8 +159,13 @@ def calculate_satellite_position(ephemeris, transmit_time):
 
 # Run the function and check out the results:
 sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
+print("one_epoch columns:") 
+print(one_epoch.columns) 
+sv_position["pseudorange"] = measurements["Pseudorange_Measurement"] + LIGHTSPEED * sv_position['Sat.bias']
+sv_position["cn0"] = measurements["Cn0DbHz"]
+sv_position = sv_position.drop('Sat.bias', axis=1)
 sv_position.to_csv(os.path.join(parent_directory,'ex0', 'output_xyz.csv'))
-print(sv_position)
+
 
 
 def least_squares(xs, measured_pseudorange, x0, b0):
@@ -207,6 +217,29 @@ for epoch in measurements['Epoch'].unique():
         x, b, dp = least_squares(xs, pr, x, b)
         ecef_list.append(x)
 
+
+lla = []
 for pos in ecef_list:
-    print(navpy.ecef2lla(pos))
+    lla.append(navpy.ecef2lla(pos))
+
+print(lla)
+
+
+
+def create_kml_file(coords, output_file):
+    kml = simplekml.Kml()
+    for coord in coords:
+        lat, lon, alt = coord
+        kml.newpoint(name="", coords=[(lon, lat, alt)])
+    kml.save(output_file)
+
+
+
+# Output file path
+output_file = "coordinates.kml"
+
+# Create KML file
+create_kml_file(lla, output_file)
+
+
 
