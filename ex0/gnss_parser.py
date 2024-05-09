@@ -219,11 +219,8 @@ for epoch in measurements['Epoch'].unique():
 
 
 lla = []
-for pos in ecef_list:
-    lla.append(navpy.ecef2lla(pos))
-
-print(lla)
-
+positions = []
+lla = [navpy.ecef2lla(coord) for coord in ecef_list]    
 
 
 def create_kml_file(coords, output_file):
@@ -234,12 +231,18 @@ def create_kml_file(coords, output_file):
     kml.save(output_file)
 
 
-
 # Output file path
 output_file = "coordinates.kml"
 
 # Create KML file
 create_kml_file(lla, output_file)
+
+
+with open('lla_coordinates.csv', 'w', newline='') as csvfile:
+    writer = csv.writer(csvfile)
+    writer.writerow(['Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
+    for ecef_coord, lla_coord in zip(ecef_list, lla):
+        writer.writerow([e for e in ecef_coord] + [lla_coord[0], lla_coord[1], lla_coord[2]])
 
 
 
