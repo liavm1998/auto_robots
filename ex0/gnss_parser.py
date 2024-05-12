@@ -1,7 +1,4 @@
 import sys, os, csv
-parent_directory = os.path.split(os.getcwd())[0]
-ephemeris_data_directory = os.path.join(parent_directory, 'data')
-sys.path.insert(0, parent_directory)
 from datetime import datetime, timezone, timedelta
 import pandas as pd
 import numpy as np
@@ -11,97 +8,14 @@ import navpy
 from gnssutils import EphemerisManager
 import simplekml
 
+parent_directory = os.path.split(os.getcwd())[0]
+ephemeris_data_directory = os.path.join(parent_directory, 'data')
+sys.path.insert(0, parent_directory)
 
 
-
-# Get path to sample file in data directory, which is located in the parent directory of this notebook
-# input_filepath = sys.argv[1]
-input_filepath = os.path.join(parent_directory,'ex0', 'gnss_log_2024_04_13_19_51_17.txt')
-
-with open(input_filepath) as csvfile:
-    reader = csv.reader(csvfile)
-    for row in reader:
-        if row[0][0] == '#':
-            if 'Fix' in row[0]:
-                android_fixes = [row[1:]]
-            elif 'Raw' in row[0]:
-                measurements = [row[1:]]
-        else:
-            if row[0] == 'Fix':
-                android_fixes.append(row[1:])
-            elif row[0] == 'Raw':
-                measurements.append(row[1:])
-
-android_fixes = pd.DataFrame(android_fixes[1:], columns = android_fixes[0])
-measurements = pd.DataFrame(measurements[1:], columns = measurements[0])
-
-# Format satellite IDs
-measurements.loc[measurements['Svid'].str.len() == 1, 'Svid'] = '0' + measurements['Svid']
-measurements.loc[measurements['ConstellationType'] == '1', 'Constellation'] = 'G'
-measurements.loc[measurements['ConstellationType'] == '3', 'Constellation'] = 'R'
-measurements['satPRN'] = measurements['Constellation'] + measurements['Svid']
-
-# Remove all non-GPS measurements
-measurements = measurements.loc[measurements['Constellation'] == 'G']
-
-# Convert columns to numeric representation
-measurements['Cn0DbHz'] = pd.to_numeric(measurements['Cn0DbHz'])
-measurements['TimeNanos'] = pd.to_numeric(measurements['TimeNanos'])
-measurements['FullBiasNanos'] = pd.to_numeric(measurements['FullBiasNanos'])
-measurements['ReceivedSvTimeNanos']  = pd.to_numeric(measurements['ReceivedSvTimeNanos'])
-measurements['PseudorangeRateMetersPerSecond'] = pd.to_numeric(measurements['PseudorangeRateMetersPerSecond'])
-measurements['ReceivedSvTimeUncertaintyNanos'] = pd.to_numeric(measurements['ReceivedSvTimeUncertaintyNanos'])
-
-# A few measurement values are not provided by all phones
-# We'll check for them and initialize them with zeros if missing
-if 'BiasNanos' in measurements.columns:
-    measurements['BiasNanos'] = pd.to_numeric(measurements['BiasNanos'])
-else:
-    measurements['BiasNanos'] = 0
-if 'TimeOffsetNanos' in measurements.columns:
-    measurements['TimeOffsetNanos'] = pd.to_numeric(measurements['TimeOffsetNanos'])
-else:
-    measurements['TimeOffsetNanos'] = 0
-
-measurements['GpsTimeNanos'] = measurements['TimeNanos'] - (measurements['FullBiasNanos'] - measurements['BiasNanos'])
-gpsepoch = datetime(1980, 1, 6, 0, 0, 0)
-measurements['UnixTime'] = pd.to_datetime(measurements['GpsTimeNanos'], utc = True, origin=gpsepoch)
-measurements['UnixTime'] = measurements['UnixTime']
-
-# Split data into measurement epochs
-measurements['Epoch'] = 0
-measurements.loc[measurements['UnixTime'] - measurements['UnixTime'].shift() > timedelta(milliseconds=200), 'Epoch'] = 1
-measurements['Epoch'] = measurements['Epoch'].cumsum()
-WEEKSEC = 604800
-LIGHTSPEED = 2.99792458e8
-
-# This should account for rollovers since it uses a week number specific to each measurement
-
-measurements['gnss_receive_time_nanoseconds'] = measurements['TimeNanos'] + measurements['TimeOffsetNanos'] - (measurements['FullBiasNanos'].iloc[0] + measurements['BiasNanos'].iloc[0])
-measurements['GpsWeekNumber'] = np.floor(1e-9 * measurements['gnss_receive_time_nanoseconds'] / WEEKSEC)
-measurements['time_since_reference'] = 1e-9*measurements['gnss_receive_time_nanoseconds'] - WEEKSEC * measurements['GpsWeekNumber']
-measurements['transmit_time_seconds'] = 1e-9*(measurements['ReceivedSvTimeNanos'] + measurements['TimeOffsetNanos'])
-# Calculate pseudorange in seconds
-measurements['pseudorange_seconds'] = measurements['time_since_reference'] - measurements['transmit_time_seconds']
-
-# Conver to meters
-measurements['Pseudorange_Measurement'] = LIGHTSPEED * measurements['pseudorange_seconds'] # simple time * speed
-
-manager = EphemerisManager(ephemeris_data_directory)
-
-epoch = 0
-num_sats = 0
-while num_sats < 5 :
-    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)].drop_duplicates(subset='satPRN')
-    timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
-    one_epoch.set_index('satPRN', inplace=True)
-    num_sats = len(one_epoch.index)
-    epoch += 1
-
-sats = one_epoch.index.unique().tolist()
-ephemeris = manager.get_ephemeris(timestamp, sats)
-# print(timestamp)
-# print(one_epoch[['UnixTime', 'transmit_time_seconds', 'GpsWeekNumber']])
+################################
+# Help functions
+################################
 
 def calculate_satellite_position(ephemeris, transmit_time):
     earth_gravity = 3.986005e14
@@ -157,17 +71,6 @@ def calculate_satellite_position(ephemeris, transmit_time):
     sv_position['Sat.Z'] = y_k_prime*np.sin(i_k)
     return sv_position
 
-# Run the function and check out the results:
-sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
-print("one_epoch columns:") 
-print(one_epoch.columns) 
-sv_position["pseudorange"] = measurements["Pseudorange_Measurement"] + LIGHTSPEED * sv_position['Sat.bias']
-sv_position["cn0"] = measurements["Cn0DbHz"]
-sv_position = sv_position.drop('Sat.bias', axis=1)
-sv_position.to_csv(os.path.join(parent_directory,'ex0', 'output_xyz.csv'))
-
-
-
 def least_squares(xs, measured_pseudorange, x0, b0):
     dx = 100*np.ones(3)
     b = b0
@@ -193,36 +96,6 @@ def least_squares(xs, measured_pseudorange, x0, b0):
     norm_dp = np.linalg.norm(deltaP)
     return x0, b0, norm_dp
 
-
-b0 = 0
-x0 = np.array([0, 0, 0])
-# Sat.X, Sat.Y, Sat.Z
-xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
-x = x0
-b = b0
-ecef_list = []
-for epoch in measurements['Epoch'].unique():
-    one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
-    one_epoch = one_epoch.drop_duplicates(subset='satPRN').set_index('satPRN')
-    if len(one_epoch.index) > 4:
-        timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
-        sats = one_epoch.index.unique().tolist()
-        ephemeris = manager.get_ephemeris(timestamp, sats)
-        sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
-
-        xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
-        pr = one_epoch['Pseudorange_Measurement'] + LIGHTSPEED * sv_position['Sat.bias']
-        pr = pr.to_numpy()
-
-        x, b, dp = least_squares(xs, pr, x, b)
-        ecef_list.append(x)
-
-
-lla = []
-positions = []
-lla = [navpy.ecef2lla(coord) for coord in ecef_list]    
-
-
 def create_kml_file(coords, output_file):
     kml = simplekml.Kml()
     for coord in coords:
@@ -231,18 +104,161 @@ def create_kml_file(coords, output_file):
     kml.save(output_file)
 
 
-# Output file path
-output_file = "coordinates.kml"
+def ex0():
 
-# Create KML file
-create_kml_file(lla, output_file)
+    ################################
+    # Clause 2
+    ################################
+
+    # Get path to sample file in data directory, which is located in the parent directory of this notebook
+    input_filepath = sys.argv[1]
+    # input_filepath = os.path.join(parent_directory,'ex0', 'gnss_log_2024_04_13_19_51_17.txt')
+
+    with open(input_filepath) as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            if row[0][0] == '#':
+                if 'Fix' in row[0]:
+                    android_fixes = [row[1:]]
+                elif 'Raw' in row[0]:
+                    measurements = [row[1:]]
+            else:
+                if row[0] == 'Fix':
+                    android_fixes.append(row[1:])
+                elif row[0] == 'Raw':
+                    measurements.append(row[1:])
+
+    android_fixes = pd.DataFrame(android_fixes[1:], columns = android_fixes[0])
+    measurements = pd.DataFrame(measurements[1:], columns = measurements[0])
+
+    # Format satellite IDs
+    measurements.loc[measurements['Svid'].str.len() == 1, 'Svid'] = '0' + measurements['Svid']
+    measurements.loc[measurements['ConstellationType'] == '1', 'Constellation'] = 'G'
+    measurements.loc[measurements['ConstellationType'] == '3', 'Constellation'] = 'R'
+    measurements['satPRN'] = measurements['Constellation'] + measurements['Svid']
+
+    # Remove all non-GPS measurements
+    measurements = measurements.loc[measurements['Constellation'] == 'G']
+
+    # Convert columns to numeric representation
+    measurements['Cn0DbHz'] = pd.to_numeric(measurements['Cn0DbHz'])
+    measurements['TimeNanos'] = pd.to_numeric(measurements['TimeNanos'])
+    measurements['FullBiasNanos'] = pd.to_numeric(measurements['FullBiasNanos'])
+    measurements['ReceivedSvTimeNanos']  = pd.to_numeric(measurements['ReceivedSvTimeNanos'])
+    measurements['PseudorangeRateMetersPerSecond'] = pd.to_numeric(measurements['PseudorangeRateMetersPerSecond'])
+    measurements['ReceivedSvTimeUncertaintyNanos'] = pd.to_numeric(measurements['ReceivedSvTimeUncertaintyNanos'])
+
+    # A few measurement values are not provided by all phones
+    # We'll check for them and initialize them with zeros if missing
+    if 'BiasNanos' in measurements.columns:
+        measurements['BiasNanos'] = pd.to_numeric(measurements['BiasNanos'])
+    else:
+        measurements['BiasNanos'] = 0
+    if 'TimeOffsetNanos' in measurements.columns:
+        measurements['TimeOffsetNanos'] = pd.to_numeric(measurements['TimeOffsetNanos'])
+    else:
+        measurements['TimeOffsetNanos'] = 0
+
+    measurements['GpsTimeNanos'] = measurements['TimeNanos'] - (measurements['FullBiasNanos'] - measurements['BiasNanos'])
+    gpsepoch = datetime(1980, 1, 6, 0, 0, 0)
+    measurements['UnixTime'] = pd.to_datetime(measurements['GpsTimeNanos'], utc = True, origin=gpsepoch)
+    measurements['UnixTime'] = measurements['UnixTime']
+
+    # Split data into measurement epochs
+    measurements['Epoch'] = 0
+    measurements.loc[measurements['UnixTime'] - measurements['UnixTime'].shift() > timedelta(milliseconds=200), 'Epoch'] = 1
+    measurements['Epoch'] = measurements['Epoch'].cumsum()
+    WEEKSEC = 604800
+    LIGHTSPEED = 2.99792458e8
+
+    # This should account for rollovers since it uses a week number specific to each measurement
+
+    measurements['gnss_receive_time_nanoseconds'] = measurements['TimeNanos'] + measurements['TimeOffsetNanos'] - (measurements['FullBiasNanos'].iloc[0] + measurements['BiasNanos'].iloc[0])
+    measurements['GpsWeekNumber'] = np.floor(1e-9 * measurements['gnss_receive_time_nanoseconds'] / WEEKSEC)
+    measurements['time_since_reference'] = 1e-9*measurements['gnss_receive_time_nanoseconds'] - WEEKSEC * measurements['GpsWeekNumber']
+    measurements['transmit_time_seconds'] = 1e-9*(measurements['ReceivedSvTimeNanos'] + measurements['TimeOffsetNanos'])
+    # Calculate pseudorange in seconds
+    measurements['pseudorange_seconds'] = measurements['time_since_reference'] - measurements['transmit_time_seconds']
+
+    # Conver to meters
+    measurements['Pseudorange_Measurement'] = LIGHTSPEED * measurements['pseudorange_seconds'] # simple time * speed
+
+    manager = EphemerisManager(ephemeris_data_directory)
+
+    epoch = 0
+    num_sats = 0
+    while num_sats < 5 :
+        one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)].drop_duplicates(subset='satPRN')
+        timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
+        one_epoch.set_index('satPRN', inplace=True)
+        num_sats = len(one_epoch.index)
+        epoch += 1
+
+    sats = one_epoch.index.unique().tolist()
+    ephemeris = manager.get_ephemeris(timestamp, sats)
+
+    # Run the function and check out the results:
+    sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
+
+    sv_position["pseudorange"] = measurements["Pseudorange_Measurement"] + LIGHTSPEED * sv_position['Sat.bias']
+    sv_position["cn0"] = measurements["Cn0DbHz"]
+    sv_position = sv_position.drop('Sat.bias', axis=1)
+    sv_position.to_csv(os.path.join(parent_directory,'ex0', 'output_xyz.csv'))
 
 
-with open('lla_coordinates.csv', 'w', newline='') as csvfile:
-    writer = csv.writer(csvfile)
-    writer.writerow(['Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
-    for ecef_coord, lla_coord in zip(ecef_list, lla):
-        writer.writerow([e for e in ecef_coord] + [lla_coord[0], lla_coord[1], lla_coord[2]])
+    ################################
+    # Clause 3
+    ################################
+
+    b0 = 0
+    x0 = np.array([0, 0, 0])
+    # Sat.X, Sat.Y, Sat.Z
+    xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
+    x = x0
+    b = b0
+    ecef_list = []
+    for epoch in measurements['Epoch'].unique():
+        one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
+        one_epoch = one_epoch.drop_duplicates(subset='satPRN').set_index('satPRN')
+        if len(one_epoch.index) > 4:
+            timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
+            sats = one_epoch.index.unique().tolist()
+            ephemeris = manager.get_ephemeris(timestamp, sats)
+            sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'])
+
+            xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
+            pr = one_epoch['Pseudorange_Measurement'] + LIGHTSPEED * sv_position['Sat.bias']
+            pr = pr.to_numpy()
+
+            x, b, dp = least_squares(xs, pr, x, b)
+            ecef_list.append(x)
 
 
 
+    ################################
+    # Clause 4
+    ################################
+    lla = [navpy.ecef2lla(coord) for coord in ecef_list]    
+
+
+    ################################
+    # Clause 5
+    ################################
+
+    # Output file path
+    output_file = "coordinates.kml"
+
+    # Create KML file
+    create_kml_file(lla, output_file)
+
+    # Create CSV file
+    with open('lla_coordinates.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
+        for ecef_coord, lla_coord in zip(ecef_list, lla):
+            writer.writerow([e for e in ecef_coord] + [lla_coord[0], lla_coord[1], lla_coord[2]])
+
+
+
+if __name__ == "__main__":
+    ex0()
