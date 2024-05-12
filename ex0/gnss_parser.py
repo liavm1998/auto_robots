@@ -77,7 +77,7 @@ def calculate_satellite_position(ephemeris, transmit_time, one_epoch):
     sv_position["pseudorange"] = one_epoch["Pseudorange_Measurement"] + LIGHTSPEED * sv_position['Sat.bias']
     sv_position["cn0"] = one_epoch["Cn0DbHz"]
     
-    return  sv_position
+    return sv_position
 
 def least_squares(receiver_positions, measured_pseudorange, initial_receiver_position, initial_clock_bias):
     position_change = 100 * np.ones(3)  # Change in position
@@ -218,7 +218,6 @@ def clause2():
     
     return measurements, sv_position
 
-
 def clause3(measurements,sv_position):
     initial_bias = 0
     initial_position = np.array([0, 0, 0])
@@ -244,7 +243,6 @@ def clause3(measurements,sv_position):
             ecef_list.append(current_position)
     return ecef_list    
 
-
 def main():
     measurements,sv_position = clause2()
     ecef_list = clause3(measurements,sv_position)
@@ -257,7 +255,6 @@ def main():
     ################################
     create_kml_file(lla)
     create_finel_csv_file(ecef_list, lla)
-
 
 if __name__ == "__main__":
     main()
