@@ -184,8 +184,13 @@ def calculate_datetime_cols(measurements):
 
 def clause2():
     # Get path to sample file in data directory, which is located in the parent directory of this notebook
-    input_filepath = sys.argv[1]
-    # input_filepath = os.path.join(parent_directory,'ex0', 'gnss_log_2024_04_13_19_51_17.txt')
+    if len(sys.argv) > 1:
+        input_filepath = sys.argv[1]
+    else:
+        # If no argument is provided, assign default value
+        input_filepath = "gnss_log_2024_04_13_19_51_17.txt"
+        input_filepath = os.path.join(parent_directory,'ex0', 'gnss_log_2024_04_13_19_51_17.txt')
+
     measurements, android_fixes = log_to_measurment(input_filepath)
 
     format_satelite_ID(measurements)
@@ -215,7 +220,7 @@ def clause2():
     sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'], one_epoch)    
     sv_position_to_csv = sv_position.drop('Sat.bias', axis=1)
     sv_position_to_csv.to_csv(os.path.join(parent_directory,'ex0', 'first_output.csv'))
-    
+
     return measurements, sv_position
 
 def clause3(measurements,sv_position):
@@ -241,6 +246,7 @@ def clause3(measurements,sv_position):
 
             current_position, current_bias, delta_position = least_squares(satellite_positions_xyz, pseudoranges, current_position, current_bias)
             ecef_list.append(current_position)
+
     return ecef_list    
 
 def main():
