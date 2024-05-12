@@ -1,8 +1,9 @@
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import sys, os, csv
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import navpy
 
 from gnssutils import EphemerisManager
@@ -103,13 +104,20 @@ def least_squares(receiver_positions, measured_pseudorange, initial_receiver_pos
     norm_delta_pseudorange = np.linalg.norm(delta_pseudorange)
     return initial_receiver_position, initial_clock_bias, norm_delta_pseudorange
 
-
-def create_kml_file(coords, output_file):
+def create_kml_file(coords):
+    output_file = "coordinates.kml"
     kml = simplekml.Kml()
     for coord in coords:
         lat, lon, alt = coord
         kml.newpoint(name="", coords=[(lon, lat, alt)])
     kml.save(output_file)
+
+def create_finel_csv_file(ecef_list, lla):
+    with open('lla_coordinates.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
+        for ecef_coord, lla_coord in zip(ecef_list, lla):
+            writer.writerow([e for e in ecef_coord] + [lla_coord[0], lla_coord[1], lla_coord[2]])
 
 def log_to_measurment(input_filepath):
     with open(input_filepath) as csvfile:
@@ -204,8 +212,6 @@ def clause2():
         epoch += 1
     sats = one_epoch.index.unique().tolist()
     ephemeris = manager.get_ephemeris(timestamp, sats)
-    print(one_epoch["Cn0DbHz"])
-    print(one_epoch["Pseudorange_Measurement"])
     sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'], one_epoch)    
     sv_position_to_csv = sv_position.drop('Sat.bias', axis=1)
     sv_position_to_csv.to_csv(os.path.join(parent_directory,'ex0', 'first_output.csv'))
@@ -213,61 +219,45 @@ def clause2():
     return measurements, sv_position
 
 
-def ex0():
-    measurements,sv_position = clause2()
-    ################################
-    ########## Clause 3 ############
-    ################################
-
-    b0 = 0
-    x0 = np.array([0, 0, 0])
-    # Sat.X, Sat.Y, Sat.Z
-    xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
-    x = x0
-    b = b0
+def clause3(measurements,sv_position):
+    initial_bias = 0
+    initial_position = np.array([0, 0, 0])
+    # Satellite Initial Position (X, Y, Z)
+    satellite_initial_position = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
+    current_position = initial_position
+    current_bias = initial_bias
     ecef_list = []
     for epoch in measurements['Epoch'].unique():
-        one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
-        one_epoch = one_epoch.drop_duplicates(subset='satPRN').set_index('satPRN')
-        if len(one_epoch.index) > 4:
-            timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
-            sats = one_epoch.index.unique().tolist()
-            ephemeris = manager.get_ephemeris(timestamp, sats)
-            sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'], measurements)
+        epoch_measurements = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
+        epoch_measurements = epoch_measurements.drop_duplicates(subset='satPRN').set_index('satPRN')
+        if len(epoch_measurements.index) > 4:
+            timestamp = epoch_measurements.iloc[0]['UnixTime'].to_pydatetime(warn=False)
+            satellite_ids = epoch_measurements.index.unique().tolist()
+            ephemeris_data = manager.get_ephemeris(timestamp, satellite_ids)
+            satellite_positions = calculate_satellite_position(ephemeris_data, epoch_measurements['transmit_time_seconds'], measurements)
 
-            xs = sv_position[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
-            pr = one_epoch['Pseudorange_Measurement'] + LIGHTSPEED * sv_position['Sat.bias']
-            pr = pr.to_numpy()
+            satellite_positions_xyz = satellite_positions[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
+            pseudoranges = epoch_measurements['Pseudorange_Measurement'] + LIGHTSPEED * satellite_positions['Sat.bias']
+            pseudoranges = pseudoranges.to_numpy()
 
-            x, b, dp = least_squares(xs, pr, x, b)
-            ecef_list.append(x)
+            current_position, current_bias, delta_position = least_squares(satellite_positions_xyz, pseudoranges, current_position, current_bias)
+            ecef_list.append(current_position)
+    return ecef_list    
 
 
-
+def main():
+    measurements,sv_position = clause2()
+    ecef_list = clause3(measurements,sv_position)
     ################################
     # Clause 4
     ################################
     lla = [navpy.ecef2lla(coord) for coord in ecef_list]    
-
-
     ################################
     # Clause 5
     ################################
-
-    # Output file path
-    output_file = "coordinates.kml"
-
-    # Create KML file
-    create_kml_file(lla, output_file)
-
-    # Create CSV file
-    with open('lla_coordinates.csv', 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
-        for ecef_coord, lla_coord in zip(ecef_list, lla):
-            writer.writerow([e for e in ecef_coord] + [lla_coord[0], lla_coord[1], lla_coord[2]])
-
+    create_kml_file(lla)
+    create_finel_csv_file(ecef_list, lla)
 
 
 if __name__ == "__main__":
-    ex0()
+    main()
