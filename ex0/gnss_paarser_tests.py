@@ -92,41 +92,46 @@ class TestGNSS(unittest.TestCase):
         self.assertIsInstance(final_position, np.ndarray)
         self.assertIsInstance(final_clock_bias, float)
 
-    # def test_calculate_satellite_position(self):
-    #     ephemeris = pd.DataFrame({
-    #         't_oe': [1],
-    #         'sqrtA': [1],
-    #         'deltaN': [1],
-    #         'M_0': [1],
-    #         'e': [0.5],
-    #         'omega': [1],
-    #         'C_us': [1],
-    #         'C_rs': [1],
-    #         'C_is': [1],
-    #         'Omega_0': [1],
-    #         'IDOT': [1],
-    #         't_oc': [1],
-    #         'SVclockBias': [1],
-    #         'SVclockDrift': [1],
-    #         'SVclockDriftRate': [1]
-    #     })
-    #     transmit_time = pd.Series([1])
-    #     one_epoch = pd.DataFrame({
-    #         'Pseudorange_Measurement': [100],
-    #         'Cn0DbHz': [30]
-    #     })
-    #
-    #     sv_position = calculate_satellite_position(ephemeris, transmit_time, one_epoch)
-    #
-    #
-    #     # Check if sv_position has the correct values based on known inputs
-    #     expected_x_value = 0  # Replace with expected value
-    #     expected_y_value = 0  # Replace with expected value
-    #     expected_z_value = 0  # Replace with expected value
-    #     tolerance = 1e-6  # Adjust tolerance based on precision requirement
-    #     self.assertAlmostEqual(sv_position.loc['G01', 'Sat.X'], expected_x_value, delta=tolerance)
-    #     self.assertAlmostEqual(sv_position.loc['G01', 'Sat.Y'], expected_y_value, delta=tolerance)
-    #     self.assertAlmostEqual(sv_position.loc['G01', 'Sat.Z'], expected_z_value, delta=tolerance)
+    def test_calculate_satellite_position(self):
+        # Mock data for testing
+        ephemeris_data = {
+            't_oe': [1],
+            'sqrtA': [1],
+            'deltaN': [0],
+            'M_0': [0],
+            'e': [0.1],
+            'omega': [0],
+            'C_us': [0],
+            'C_rs': [0],
+            'C_is': [0],
+            'Omega_0': [0],
+            'IDOT': [0],
+            't_oc': [0],
+            'SVclockBias': [0],
+            'SVclockDrift': [0],
+            'SVclockDriftRate': [0],
+            'constellation': ['G'],
+            'C_uc': [0]  # Existing column
+        }
+
+        # Convert mock data to DataFrame
+        ephemeris = pd.DataFrame(ephemeris_data)
+
+        # Ensure 'C_ic' column is not present in the DataFrame
+        self.assertNotIn('C_ic', ephemeris.columns)
+
+        # Define transmit_time with some appropriate value
+        transmit_time = pd.Series([0.1])
+
+        # Mock one_epoch DataFrame
+        one_epoch = pd.DataFrame({
+            'Pseudorange_Measurement': [0],
+            'Cn0DbHz': [30]
+        })
+
+        # Assert that calling the function raises a KeyError when 'C_ic' column is missing
+        with self.assertRaises(KeyError):
+            calculate_satellite_position(ephemeris, transmit_time, one_epoch)
 
 
 if __name__ == '__main__':
