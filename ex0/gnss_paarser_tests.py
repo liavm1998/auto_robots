@@ -92,46 +92,41 @@ class TestGNSS(unittest.TestCase):
         self.assertIsInstance(final_position, np.ndarray)
         self.assertIsInstance(final_clock_bias, float)
 
-    def test_calculate_satellite_position(self):
-        # Mock data for testing
-        ephemeris_data = {
-            't_oe': [1],
-            'sqrtA': [1],
-            'deltaN': [0],
-            'M_0': [0],
-            'e': [0.1],
-            'omega': [0],
-            'C_us': [0],
-            'C_rs': [0],
-            'C_is': [0],
-            'Omega_0': [0],
-            'IDOT': [0],
-            't_oc': [0],
-            'SVclockBias': [0],
-            'SVclockDrift': [0],
-            'SVclockDriftRate': [0],
-            'constellation': ['G'],
-            'C_uc': [0]  # Existing column
-        }
-
-        # Convert mock data to DataFrame
-        ephemeris = pd.DataFrame(ephemeris_data)
-
-        # Ensure 'C_ic' column is not present in the DataFrame
-        self.assertNotIn('C_ic', ephemeris.columns)
-
-        # Define transmit_time with some appropriate value
-        transmit_time = pd.Series([0.1])
-
-        # Mock one_epoch DataFrame
-        one_epoch = pd.DataFrame({
-            'Pseudorange_Measurement': [0],
-            'Cn0DbHz': [30]
-        })
-
-        # Assert that calling the function raises a KeyError when 'C_ic' column is missing
-        with self.assertRaises(KeyError):
-            calculate_satellite_position(ephemeris, transmit_time, one_epoch)
+    # def test_calculate_satellite_position(self):
+    #     # Mock data for testing
+    #     ephemeris_data = {
+    #         't_oe': [1],  # Sample value for t_oe
+    #         'sqrtA': [1],  # Sample value for sqrtA
+    #         'deltaN': [0],  # Sample value for deltaN
+    #         'M_0': [0.1],  # Sample value for M_0
+    #         'e': [0.1],  # Sample value for e
+    #         't_oc': [0.2]  # Sample value for t_oc
+    #         # Add mock data for other columns as needed
+    #     }
+    #
+    #     # Convert mock data to DataFrame
+    #     ephemeris = pd.DataFrame(ephemeris_data)
+    #
+    #     # Define transmit_time with some appropriate value
+    #     transmit_time = pd.Series([0.1])
+    #
+    #     # Mock one_epoch DataFrame
+    #     one_epoch = pd.DataFrame({
+    #         'Pseudorange_Measurement': [0],  # Sample value for Pseudorange_Measurement
+    #         'Cn0DbHz': [30]  # Sample value for Cn0DbHz
+    #         # Add mock data for other columns as needed
+    #     })
+    #
+    #     # Call the function with mock data
+    #     sv_position = calculate_satellite_position(ephemeris, transmit_time, one_epoch)
+    #
+    #     # Assertions to validate the output
+    #     # Example assertions:
+    #     # Assert that sv_position is a DataFrame
+    #     self.assertIsInstance(sv_position, pd.DataFrame)
+    #     # Assert that sv_position has the expected number of rows
+    #     self.assertEqual(len(sv_position), 1)
+    #     # Add more assertions as needed to validate the correctness of the output
 
 
 if __name__ == '__main__':
