@@ -22,7 +22,27 @@ LIGHTSPEED = 2.99792458e8
 # Help functions
 ################################
 
-
+def calculate_locations_data_frame(ecef_list_with_times):
+    locations_df = []
+    # Iterate over each tuple in ecef_list_with_times
+    for (coord, time) in ecef_list_with_times:
+        # Convert ECEF coordinates to LLA coordinates
+        lla_coords = navpy.ecef2lla(coord)
+        
+        # Extract individual components
+        lla_lat = lla_coords[0]
+        lla_lon = lla_coords[1]
+        lla_alt = lla_coords[2]
+        ecef_x = coord[0]
+        ecef_y = coord[1]
+        ecef_z = coord[2]
+        
+        # Create a tuple with the required components
+        row = (time, lla_lat, lla_lon, lla_alt, ecef_x, ecef_y, ecef_z)
+        
+        # Append the tuple to the locations_df list
+        locations_df.append(row)
+    return pd.DataFrame(locations_df, columns=["GPS time", "Pos.X", "Pos.Y", "Pos.Z", "Lat", "Lon", "Alt"],index=None)
 
 def calculate_satellite_position(ephemeris, transmit_time, one_epoch):
     earth_gravity = 3.986005e14
@@ -114,12 +134,12 @@ def create_kml_file(coords):
         kml.newpoint(name="", coords=[(lon, lat, alt)])
     kml.save(output_file)
 
-def create_finel_csv_file(ecef_list, lla):
-    with open('lla_coordinates.csv', 'w', newline='') as csvfile:
+def create_finel_csv_file(final_df):
+    with open('lla_coordinates2.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
-        for ecef_coord, lla_coord in zip(ecef_list, lla):
-            writer.writerow([e for e in ecef_coord] + [lla_coord[0], lla_coord[1], lla_coord[2]])
+        writer.writerow(['gps time','Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
+        for row in final_df:
+            writer.writerow(row)
 
 def log_to_measurment(input_filepath):
     with open(input_filepath) as csvfile:
@@ -206,22 +226,36 @@ def clause2():
     measurements['Pseudorange_Measurement'] = LIGHTSPEED * measurements['pseudorange_seconds'] # simple time * speed
 
     
-    # run on all the epochs, until got epoch with 5 satelites or more
+    # Initialize variables
     epoch = 0
     num_sats = 0
-    while num_sats < 5 :
+    sv_positions = pd.DataFrame()
+    print('max epoch is :', measurements['Epoch'].max())
+    # Iterate over each epoch
+    while True:
+        # Filter measurements for the current epoch and pseudorange condition
         one_epoch = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)].drop_duplicates(subset='satPRN')
-        timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
-        one_epoch.set_index('satPRN', inplace=True)
-        num_sats = len(one_epoch.index)
-        epoch += 1
-    sats = one_epoch.index.unique().tolist()
-    ephemeris = manager.get_ephemeris(timestamp, sats)
-    sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'], one_epoch)    
-    sv_position_to_csv = sv_position.drop('Sat.bias', axis=1)
-    sv_position_to_csv.to_csv(os.path.join(parent_directory,'ex0', 'first_output.csv'))
+        # Check if there are 5 or more satellites in the current epoch
+        num_sats = len(one_epoch)
+        if num_sats >= 5:
+            # Perform operations for the current epoch
+            timestamp = one_epoch.iloc[0]['UnixTime'].to_pydatetime(warn=False)
+            one_epoch.set_index('satPRN', inplace=True)
+            sats = one_epoch.index.unique().tolist()
+            ephemeris = manager.get_ephemeris(timestamp, sats)
+            sv_position = calculate_satellite_position(ephemeris, one_epoch['transmit_time_seconds'], one_epoch)
+            
+            # Concatenate satellite positions for the current epoch
+            sv_positions = pd.concat([sv_positions, sv_position])
 
-    return measurements, sv_position
+        # Move to the next epoch
+        epoch += 1
+        
+        # Exit loop if there are no more epochs
+        if epoch >= measurements['Epoch'].max():
+            break
+    sv_positions.drop(columns=['Sat.bias']).to_csv('first_output.csv')
+    return measurements, sv_positions
 
 def clause3(measurements,sv_position):
     initial_bias = 0
@@ -231,6 +265,7 @@ def clause3(measurements,sv_position):
     current_position = initial_position
     current_bias = initial_bias
     ecef_list = []
+    ecef_list_with_times = []
     for epoch in measurements['Epoch'].unique():
         epoch_measurements = measurements.loc[(measurements['Epoch'] == epoch) & (measurements['pseudorange_seconds'] < 0.1)] 
         epoch_measurements = epoch_measurements.drop_duplicates(subset='satPRN').set_index('satPRN')
@@ -239,28 +274,38 @@ def clause3(measurements,sv_position):
             satellite_ids = epoch_measurements.index.unique().tolist()
             ephemeris_data = manager.get_ephemeris(timestamp, satellite_ids)
             satellite_positions = calculate_satellite_position(ephemeris_data, epoch_measurements['transmit_time_seconds'], measurements)
-
             satellite_positions_xyz = satellite_positions[['Sat.X', 'Sat.Y', 'Sat.Z']].to_numpy()
             pseudoranges = epoch_measurements['Pseudorange_Measurement'] + LIGHTSPEED * satellite_positions['Sat.bias']
             pseudoranges = pseudoranges.to_numpy()
 
             current_position, current_bias, delta_position = least_squares(satellite_positions_xyz, pseudoranges, current_position, current_bias)
             ecef_list.append(current_position)
+            ecef_list_with_times.append((current_position,satellite_positions['GPS time'].min()))
 
-    return ecef_list    
+    return ecef_list_with_times
 
 def main():
     measurements,sv_position = clause2()
-    ecef_list = clause3(measurements,sv_position)
+    ecef_list_with_times = clause3(measurements,sv_position)
+    print(ecef_list_with_times)
     ################################
     # Clause 4
     ################################
-    lla = [navpy.ecef2lla(coord) for coord in ecef_list]    
+    lla = [navpy.ecef2lla(coord) for (coord,time) in ecef_list_with_times]    
+    
     ################################
     # Clause 5
     ################################
     create_kml_file(lla)
-    create_finel_csv_file(ecef_list, lla)
+    locations_df = calculate_locations_data_frame(ecef_list_with_times)
+    
+    firstOutputDf = pd.read_csv('first_output.csv')
+    
+    final_df = pd.merge(firstOutputDf, locations_df, on="GPS time")
+    final_df.to_csv('final.csv',index=None)
+    
+
+    
 
 if __name__ == "__main__":
     main()
