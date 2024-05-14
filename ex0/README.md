@@ -1,11 +1,11 @@
-# autonmous robots assignments
-## ex0
-<h6>submitters</h6>
+
+# ex0
+<h3>submitters</h3>
 <p>name:liav levi ID:206603193</p>
 <p>name:oria tzadok ID:315500157</p>
 <p>name:sagi yosef azulai ID:0000000000</p>
 
-#
+# 
 <p> first thing to do for this assignment running and checking: </p>
 
 
