@@ -223,7 +223,6 @@ def clause2():
     epoch = 0
     num_sats = 0
     sv_positions = pd.DataFrame()
-    print('max epoch is :', measurements['Epoch'].max())
     # Iterate over each epoch
     while True:
         # Filter measurements for the current epoch and pseudorange condition
@@ -280,7 +279,6 @@ def clause3(measurements,sv_position):
 def main():
     measurements,sv_position = clause2()
     ecef_list_with_times = clause3(measurements,sv_position)
-    print(ecef_list_with_times)
     ################################
     # Clause 4
     ################################
