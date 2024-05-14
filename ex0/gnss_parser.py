@@ -189,9 +189,7 @@ def clause2():
     if len(sys.argv) > 1:
         input_filepath = sys.argv[1]
     else:
-        # If no argument is provided, assign default value
-        input_filepath = "gnss_log_2024_04_13_19_51_17.txt"
-        input_filepath = os.path.join(parent_directory,'ex0', 'gnss_log_2024_04_13_19_51_17.txt')
+        exit("should give log file")
 
     measurements, android_fixes = log_to_measurment(input_filepath)
 
