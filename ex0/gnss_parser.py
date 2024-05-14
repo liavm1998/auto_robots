@@ -134,13 +134,6 @@ def create_kml_file(coords):
         kml.newpoint(name="", coords=[(lon, lat, alt)])
     kml.save(output_file)
 
-def create_finel_csv_file(final_df):
-    with open('lla_coordinates2.csv', 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['gps time','Pos.X', 'Pos.Y', 'Pos.Z', 'Lat', 'Lon', 'Alt'])
-        for row in final_df:
-            writer.writerow(row)
-
 def log_to_measurment(input_filepath):
     with open(input_filepath) as csvfile:
         reader = csv.reader(csvfile)

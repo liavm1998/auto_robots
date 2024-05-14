@@ -200,22 +200,22 @@ class TestParseInputFilePipeline(unittest.TestCase):
         measurements =  measurements.head(50)    
         sv_position = sv_position.head(50)
         ecef_list = clause3(measurements, sv_position)
-        excpected_ecef_list = [pd.array([4436894.2780066 , 3085290.16479374, 3376331.62495113]),
-                               pd.array([4436885.83366258, 3085286.08353279, 3376328.15229751]),
-                               pd.array([4436888.10135707, 3085286.08342632, 3376328.11202359]), 
-                               pd.array([4436905.01334421, 3085290.20758007, 3376337.88831127])]
+        
+        excpected_ecef_list = [(pd.array([4436894.2780066 , 3085290.16479374, 3376331.62495113]), 3139.3385134040145),
+                               (pd.array([4436885.83366258, 3085286.08353279, 3376328.15229751]), 3140.3385149930837),
+                               (pd.array([4436888.10135707, 3085286.08342632, 3376328.11202359]), 3141.3385165710934), 
+                               (pd.array([4436905.01334421, 3085290.20758007, 3376337.88831127]), 3142.3385181290796)]
         # Check if ecef_list has correct length and type
         self.assertEqual(len(ecef_list), 4)  
         self.assertListEqual(excpected_ecef_list, ecef_list) 
-
+    
+    @classmethod
+    def tearDownClass(cls):
+        os.remove('first_output.csv')
+        return super().tearDownClass()
 
      
 
-
-if __name__ == '__main__':
-    with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            unittest.main()
 
 
 
