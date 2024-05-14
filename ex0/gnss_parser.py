@@ -22,6 +22,8 @@ LIGHTSPEED = 2.99792458e8
 # Help functions
 ################################
 
+
+
 def calculate_satellite_position(ephemeris, transmit_time, one_epoch):
     earth_gravity = 3.986005e14
     Earth_angular_velocity = 7.2921151467e-5 
