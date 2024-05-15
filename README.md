@@ -3,9 +3,9 @@
 <h6>submitters</h6>
 <p>name:liav levi ID:206603193</p>
 <p>name:oria tzadok ID:315500157</p>
-<p>name:sagi yosef azulai ID:0000000000</p>
+<p>name:sagi yosef azulai ID:207544230</p>
 
-# HOW TO RUN
+## HOW TO RUN
 <p> first thing to do for this assignment running and checking: </p>
 
 
@@ -39,7 +39,7 @@ pytest --disable-warnings
 python cleaner.py
 ~~~
 
-# little code explanation
+## little code explanation
 
 <h3>this should be very easy as the function names do literaly as they named</h3>
 <p><b>log_to_measurment</b>: as it sound this function accept the log file location and load it as pandas.DataFrame</p>
