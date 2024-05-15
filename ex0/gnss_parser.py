@@ -289,7 +289,6 @@ def main():
     locations_df = calculate_locations_data_frame(ecef_list_with_times)
     
     firstOutputDf = pd.read_csv('satellites_positions.csv')
-    locations_df.to_csv('estimated_location.csv',index=None)
     final_df = pd.merge(firstOutputDf, locations_df, on="GPS time")
     final_df.to_csv('satellites_positions_with_estimated_location.csv',index=None)
        
