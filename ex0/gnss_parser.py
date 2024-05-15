@@ -38,8 +38,7 @@ def calculate_locations_data_frame(ecef_list_with_times):
         ecef_z = coord[2]
         
         # Create a tuple with the required components
-        row = (time, lla_lat, lla_lon, lla_alt, ecef_x, ecef_y, ecef_z)
-        
+        row = (time, ecef_x, ecef_y, ecef_z, lla_lat, lla_lon, lla_alt)
         # Append the tuple to the locations_df list
         locations_df.append(row)
     return pd.DataFrame(locations_df, columns=["GPS time", "Pos.X", "Pos.Y", "Pos.Z", "Lat", "Lon", "Alt"],index=None)
@@ -277,13 +276,12 @@ def clause3(measurements,sv_position):
     return ecef_list_with_times
 
 def main():
-    measurements,sv_position = clause2()
+    measurements, sv_position = clause2()
     ecef_list_with_times = clause3(measurements,sv_position)
     ################################
     # Clause 4
     ################################
     lla = [navpy.ecef2lla(coord) for (coord,time) in ecef_list_with_times]    
-    
     ################################
     # Clause 5
     ################################
@@ -291,12 +289,10 @@ def main():
     locations_df = calculate_locations_data_frame(ecef_list_with_times)
     
     firstOutputDf = pd.read_csv('first_output.csv')
-    
+    locations_df.to_csv('location.csv',index=None)
     final_df = pd.merge(firstOutputDf, locations_df, on="GPS time")
     final_df.to_csv('final.csv',index=None)
-    
-
-    
+       
 
 if __name__ == "__main__":
     main()
