@@ -153,7 +153,7 @@ class TestParseInputFilePipeline(unittest.TestCase):
         df1_numeric = df1_numeric.fillna(0)
         df2_numeric = df2_numeric.fillna(0)
 
-        tolerance = 1e+6  # Adjust the tolerance based on your requirements
+        tolerance = 10  # Adjust the tolerance based on your requirements
         # Compare numeric columns using np.isclose()
         numeric_comparison = np.isclose(df1_numeric, df2_numeric, rtol=tolerance, atol=tolerance)
         self.assertTrue(numeric_comparison.all().all())
@@ -211,7 +211,7 @@ class TestParseInputFilePipeline(unittest.TestCase):
     
     @classmethod
     def tearDownClass(cls):
-        os.remove('first_output.csv')
+        os.remove('satellites_positions.csv')
         return super().tearDownClass()
 
      

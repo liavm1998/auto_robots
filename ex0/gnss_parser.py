@@ -245,7 +245,7 @@ def clause2():
         # Exit loop if there are no more epochs
         if epoch >= measurements['Epoch'].max():
             break
-    sv_positions.drop(columns=['Sat.bias']).to_csv('first_output.csv')
+    sv_positions.drop(columns=['Sat.bias']).to_csv('satellites_positions.csv')
     return measurements, sv_positions
 
 def clause3(measurements,sv_position):
@@ -288,10 +288,10 @@ def main():
     create_kml_file(lla)
     locations_df = calculate_locations_data_frame(ecef_list_with_times)
     
-    firstOutputDf = pd.read_csv('first_output.csv')
-    locations_df.to_csv('location.csv',index=None)
+    firstOutputDf = pd.read_csv('satellites_positions.csv')
+    locations_df.to_csv('estimated_location.csv',index=None)
     final_df = pd.merge(firstOutputDf, locations_df, on="GPS time")
-    final_df.to_csv('final.csv',index=None)
+    final_df.to_csv('satellites_positions_with_estimated_location.csv',index=None)
        
 
 if __name__ == "__main__":
